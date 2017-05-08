@@ -131,9 +131,14 @@ func (p *Params) GetBool(key string) bool {
 
 func (p *Params) GetIntOk(key string) (int, bool) {
 	val, ok := p.Get(key)
-	if sval, sok := val.(string); sok {
+	switch v := val.(type) {
+	case []byte:
 		var err error
-		val, err = strconv.ParseFloat(sval, 64)
+		val, err = strconv.ParseFloat(string(v), 64)
+		ok = err == nil
+	case string:
+		var err error
+		val, err = strconv.ParseFloat(v, 64)
 		ok = err == nil
 	}
 	if ok {
@@ -341,15 +346,16 @@ func (p *Params) GetString(key string) string {
 func (p *Params) GetStringSliceOk(key string) ([]string, bool) {
 	val, ok := p.Get(key)
 	if ok {
-		switch val.(type) {
+		switch v := val.(type) {
 		case []string:
-			return val.([]string), true
+			return v, true
+		case []byte:
+			return strings.Split(string(v), ","), true
 		case string:
-			return strings.Split(val.(string), ","), true
+			return strings.Split(v, ","), true
 		case []interface{}:
-			raw := val.([]interface{})
-			slice := make([]string, len(raw))
-			for i, k := range raw {
+			slice := make([]string, len(v))
+			for i, k := range v {
 				slice[i] = k.(string)
 			}
 			return slice, true
@@ -524,6 +530,11 @@ func (p *Params) Clone() *Params {
 	}
 }
 
+var (
+	typeOfTime      reflect.Type = reflect.TypeOf(time.Time{})
+	typeOfPtrToTime reflect.Type = reflect.PtrTo(typeOfTime)
+)
+
 //Sets the parameters to the object by type; does not handle nested parameters
 func (p *Params) Imbue(obj interface{}) {
 
@@ -682,6 +693,7 @@ func ParseParams(req *http.Request) *Params {
 		p.isBinary = true
 		mh.MapType = reflect.TypeOf(p.Values)
 		body, _ := ioutil.ReadAll(req.Body)
+		log.Printf("Here is the body of the request: [%s] %v [%q]", body, body, body)
 		if len(body) > 0 {
 			buff := bytes.NewBuffer(body)
 			first := body[0]
@@ -690,6 +702,7 @@ func ParseParams(req *http.Request) *Params {
 				if err != nil && err != io.EOF {
 					log.Println("Failed decoding msgpack", err)
 				}
+				log.Printf("1: decoded : %#v", p.Values)
 			} else {
 				if p.Values == nil {
 					p.Values = make(map[string]interface{}, 0)
@@ -706,6 +719,7 @@ func ParseParams(req *http.Request) *Params {
 						}
 					}
 				}
+				log.Printf("2: decoded : %#v", p.Values)
 			}
 		} else {
 			p.Values = make(map[string]interface{}, 0)
@@ -732,6 +746,8 @@ func ParseParams(req *http.Request) *Params {
 			p.Values[k] = v
 		}
 	}
+
+	log.Printf("Parsed params: %v", p)
 
 	return &p
 }
